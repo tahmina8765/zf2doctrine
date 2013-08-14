@@ -2,32 +2,26 @@
 
 namespace Album\Controller;
 
-use Zend\Mvc\Controller\AbstractActionController;
 use Zend\View\Model\ViewModel;
-
 use Album\Entity\Album;
 use Album\Form\AlbumForm;
 use Album\Form\AlbumSearchForm;
-
-
 use Zend\Db\Sql\Select;
 use Zend\Paginator\Paginator;
 use Zend\Paginator\Adapter\Iterator as paginatorIterator;
-
-
-
-
+use Doctrine\ORM\EntityManager;     // Add this line
 
 class AlbumController extends AlbumAppController
 {
+
     public $vm;
+
 //    protected $albumTable;
 
     function __construct()
     {
         parent::__construct();
         $this->vm = new viewModel();
-
     }
 
 //    public function getAlbumTable()
@@ -39,6 +33,23 @@ class AlbumController extends AlbumAppController
 //        return $this->albumTable;
 //    }
 
+    /**
+     * @var Doctrine\ORM\EntityManager
+     */
+    protected $em;
+
+    public function setEntityManager(EntityManager $em)
+    {
+        $this->em = $em;
+    }
+
+    public function getEntityManager()
+    {
+        if (null === $this->em) {
+            $this->em = $this->getServiceLocator()->get('Doctrine\ORM\EntityManager');
+        }
+        return $this->em;
+    }
 
     public function searchAction()
     {
@@ -65,17 +76,19 @@ class AlbumController extends AlbumAppController
         $this->redirect()->toUrl($url);
     }
 
-    public function indexAction() {
+    public function indexAction()
+    {
+
         $searchform = new AlbumSearchForm();
         $searchform->get('submit')->setValue('Search');
 
         $select = new Select();
 
-        $order_by = $this->params()->fromRoute('order_by') ?
+        $order_by  = $this->params()->fromRoute('order_by') ?
                 $this->params()->fromRoute('order_by') : 'id';
-        $order = $this->params()->fromRoute('order') ?
+        $order     = $this->params()->fromRoute('order') ?
                 $this->params()->fromRoute('order') : Select::ORDER_ASCENDING;
-        $page = $this->params()->fromRoute('page') ? (int) $this->params()->fromRoute('page') : 1;
+        $page      = $this->params()->fromRoute('page') ? (int) $this->params()->fromRoute('page') : 1;
         $select->order($order_by . ' ' . $order);
         $search_by = $this->params()->fromRoute('search_by') ?
                 $this->params()->fromRoute('search_by') : '';
@@ -95,45 +108,35 @@ class AlbumController extends AlbumAppController
                         new \Zend\Db\Sql\Predicate\Like('title', '%' . $formdata['title'] . '%')
                 );
             }
-            
         }
         if (!empty($where)) {
             $select->where($where);
         }
 
+        $album = $this->getEntityManager()->getRepository('Album\Entity\Album')->findAll();
 
-        $album = $this->getAlbumTable()->fetchAll($select);
-        $totalRecord  = $album->count();
-        $itemsPerPage = 10;
-
-        $album->current();
-        $paginator = new Paginator(new paginatorIterator($album));
-        $paginator->setCurrentPageNumber($page)
-                ->setItemCountPerPage($itemsPerPage)
-                ->setPageRange(7);
 
         $searchform->setData($formdata);
+
+
         $this->vm->setVariables(array(
-            'search_by'  => $search_by,
-            'order_by'   => $order_by,
-            'order'      => $order,
-            'page'       => $page,
-            'paginator'  => $paginator,
-            'pageAction' => 'album',
-            'form'       => $searchform,
+            'search_by'   => $search_by,
+            'order_by'    => $order_by,
+            'order'       => $order,
+            'page'        => $page,
+            'paginator'   => $album,
+            'pageAction'  => 'album',
+            'form'        => $searchform,
             'totalRecord' => $totalRecord
         ));
         return $this->vm;
-
-
-
     }
-
 
     public function addAction()
     {
+
         $form = new AlbumForm();
-        $form->get('submit')->setValue('Add');
+        $form->get('submit')->setAttribute('label', 'Add');
 
         $request = $this->getRequest();
         if ($request->isPost()) {
@@ -143,15 +146,22 @@ class AlbumController extends AlbumAppController
 
             if ($form->isValid()) {
                 $album->exchangeArray($form->getData());
-                $confirm = $this->getAlbumTable()->saveAlbum($album);
-
-                // Redirect to list of albums
+                $this->getEntityManager()->persist($album);
+                $this->getEntityManager()->flush();
                 return $this->redirect()->toRoute('album');
             }
+
+//            if ($form->isValid()) {
+//                $album->exchangeArray($form->getData());
+//                $confirm = $this->getAlbumTable()->saveAlbum($album);
+//
+//                // Redirect to list of albums
+//                return $this->redirect()->toRoute('album');
+//            }
         }
         $this->vm->setVariables(array(
-            'flashMessages'   => $this->flashMessenger()->getMessages(),
-            'form' => $form
+            'flashMessages' => $this->flashMessenger()->getMessages(),
+            'form'          => $form
         ));
 
         return $this->vm;
@@ -164,7 +174,7 @@ class AlbumController extends AlbumAppController
         if (!$id) {
             return $this->redirect()->toRoute('album', array(
                         'action' => 'add'
-                    ));
+            ));
         }
         $album = $this->getAlbumTable()->getAlbum($id);
 
@@ -185,9 +195,9 @@ class AlbumController extends AlbumAppController
             }
         }
         $this->vm->setVariables(array(
-            'flashMessages'   => $this->flashMessenger()->getMessages(),
-            'id'   => $id,
-            'form' => $form,
+            'flashMessages' => $this->flashMessenger()->getMessages(),
+            'id'            => $id,
+            'form'          => $form,
         ));
 
         return $this->vm;
@@ -203,17 +213,17 @@ class AlbumController extends AlbumAppController
         $request = $this->getRequest();
         if ($request->isPost()) {
 
-                $id = (int) $request->getPost('id');
-                $confirm = $this->getAlbumTable()->deleteAlbum($id);
+            $id      = (int) $request->getPost('id');
+            $confirm = $this->getAlbumTable()->deleteAlbum($id);
 
 
             // Redirect to list of albums
             return $this->redirect()->toRoute('album');
         }
         $this->vm->setVariables(array(
-            'flashMessages'   => $this->flashMessenger()->getMessages(),
-            'id'    => $id,
-            'album' => $this->getAlbumTable()->getAlbum($id)
+            'flashMessages' => $this->flashMessenger()->getMessages(),
+            'id'            => $id,
+            'album'         => $this->getAlbumTable()->getAlbum($id)
         ));
 
         return $this->vm;
